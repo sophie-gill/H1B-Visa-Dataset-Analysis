@@ -1,0 +1,224 @@
+---
+title: "Final Exam"
+date: December 11, 2023
+author: Sophie Gill
+format:
+  html:
+    toc: true
+    embed-resources: true
+mainfont: "Tex Gyre Schola"
+monofont: JetBrainsMono Nerd Font
+mathfont: Tex Gyre Schola Math
+---
+
+# Introduction
+
+This data analysis explores the H1B 2017 dataset within RStudio and aims to supply an understanding of the information it provides through means of numerical, visual, and regression-based descriptions. The dataset is composed of information about the H-1B visa in the United States, which allows for the employment of foreign workers in specialty occupations. The data includes details of the employers of such individuals, as well as details related to their petition. This report strives to provide insight into this vast amount of information by identifying and interpreting relationships between those variables.
+
+
+# Data Preparation
+
+This block contains the packages needed to work with the dataset throughout the report. It also provides a glimpse of the raw, chaotic data before any alterations are made. 
+
+```{r}
+library(readr)
+library(dplyr)
+library(ggplot2)
+df <- read_tsv("/home/mm223266/data/h1b-2017-half.tsv")
+glimpse(df)
+```
+To begin narrowing down the dataset, I evaluated the different visas and employer countries present. The following small tables display how the H-1B visa and the USA are the only factors I should consider in terms of those variables.
+```{r}
+visa_class_counts <- table(df$VISA_CLASS)
+visa_class_counts
+```
+```{r}
+employer_country_counts <- table(df$EMPLOYER_COUNTRY)
+employer_country_counts
+```
+
+After reviewing the raw dataset, I distinguished the variables I thought to be the most significant for comparison purposes. This block creates a new dataframe (df2) that only takes into account my chosen columns, and filters the visa class and employer country variables as decided above. Finally, 'na.omit()' further cleans up the data by removing all observations with missing information throughout any variable in the set. I will be using df2 for the remainder of my exploration.
+```{r}
+#create new data frame with just H1B visas, USA as employer country, and desired variables
+df2 <- df |>
+  filter(VISA_CLASS == 'H-1B') |>
+  filter(EMPLOYER_COUNTRY == 'UNITED STATES OF AMERICA') |>
+  select(c("CASE_STATUS", "DECISION_DATE", "EMPLOYER_NAME", "JOB_TITLE", "PREVAILING_WAGE", "WORKSITE_STATE", "CASE_SUBMITTED")) |>
+  na.omit()
+```
+
+
+
+# Numerical Summary
+In this section, I begin experimenting with variable relationships and analyzing what the results may imply. Firstly, I was curious about the application distribution across the USA. This table displays the count of visa applications per state, showing that California receives the highest amount. 
+
+```{r}
+state_table <- table(df2$WORKSITE_STATE)
+state_table
+```
+
+Taking the states with the most applications, I am now displaying the count of the most popular jobs in those areas.
+```{r}
+df2 |>
+  filter(WORKSITE_STATE %in% c("CA", "IL", "NJ", "NY", "TX", "WA", "PA", "MA", "GA", "FL")) |>
+  filter(JOB_TITLE %in% c("PROGRAMMER ANALYST", "SOFTWARE ENGINEER", "SOFTWARE DEVELOPER", "SYSTEMS ANALYST", "COMPUTER PROGRAMMER", "CONSULTANT", "BUSINESS ANALYST")) |>
+  with(addmargins(table(JOB_TITLE, WORKSITE_STATE)))
+```
+It can now be seen that computer developers, programmers, and system analysts are the occupations which contribute to the maximum share of H1B applications. This suggests that there may have been high demand for computer engineers in the US during 2017. 
+
+
+I then wanted to know if the popularity of these jobs had any correlation to the likelihood or frequency of their application being certified. The following comparison depicts the predominant case status of the same jobs viewed above. 
+```{r}
+selected_jobs <- c("PROGRAMMER ANALYST", "SOFTWARE ENGINEER", "SOFTWARE DEVELOPER", 
+                   "SYSTEMS ANALYST", "COMPUTER PROGRAMMER", "CONSULTANT", "BUSINESS ANALYST")
+
+summary_table <- df2 %>%
+  filter(JOB_TITLE %in% selected_jobs) %>%
+  group_by(JOB_TITLE) %>%
+  summarize(
+    Predominant_Case_Status = names(sort(table(CASE_STATUS), decreasing = TRUE)[1]),
+    Total_Applicants = n()
+  )
+summary_table
+```
+Although a high majority of the applications for these jobs were certified, it is important to acknowledge that it's less likely that there is a significant relationship between the variables due to the vastly higher amount of applications these positions receive. 
+
+
+Despite that lack of likely correlation, I still wanted to further investigate potential relationships with those common job titles. I am now determining if they possess any affiliation with the turnaround time for an application being processed. I was curious to know if the high demand for these jobs meant fewer days elapsed between when the application was submitted and when the results were received. The following block uses the 'difftime' function to create the variable 'daysElapsed' for this purpose. 
+```{r}
+# Assuming df2 is your dataframe
+df2 <- df2 %>%
+  mutate(daysElapsed = as.integer(difftime(DECISION_DATE, CASE_SUBMITTED, units = "days")))
+
+summary(df2$daysElapsed)
+```
+This chart compares jobs with their average days elapsed using the new 'daysElapsed' variable. 
+```{r}
+df2 |>
+  group_by(JOB_TITLE) |>
+  summarize(
+    Total_Applicants = n(),
+    Average_Days_Elapsed = mean(daysElapsed, na.rm = TRUE)
+  ) |>
+  arrange(desc(Total_Applicants)) |>
+  head(10)
+```
+From this information, there doesn't seem to be a strong relationship between these variables either. Although the most popular jobs tend to have a consistent range of turnaround times, the less popular ones don't seem to show a slower time frame, as would be needed to draw any conclusions.  
+
+
+Overall, these initial summaries provide a good foundation for my forthcoming work on the dataset. I was able to determine the most common states to receive applications, as well as the jobs most applied for there. However, there don't appear to be any definitive relationships between variables as of yet. The visual summaries will delve further into this research, extracting more insight from what I've found where applicable. 
+
+
+
+# Visual Summary
+The visualization process will help me to further prove or disprove any relationships between variables explored before. Additionally, this section will ideally make the information more comprehensible. 
+
+The following bar chart utilizes the top states established before and compares them to the top jobs in those places. It confirms those most popular jobs to be accurate and emphasizes the extensive amount of programmer analyst applications.
+```{r}
+selected_states <- c("CA", "IL", "NJ", "NY", "TX", "FL", "GA")
+filtered_data <- df2[df2$WORKSITE_STATE %in% selected_states,]
+
+# Calculate the top jobs for each state
+top_jobs_by_state <- filtered_data %>%
+  group_by(WORKSITE_STATE, JOB_TITLE) %>%
+  summarize(JobCount = n()) %>%
+  arrange(desc(JobCount)) %>%
+  group_by(WORKSITE_STATE) %>%
+  slice_max(order_by = JobCount, n = 5)
+
+# Create grouped bar plot
+bar_plot <- ggplot(top_jobs_by_state, aes(x = WORKSITE_STATE, y = JobCount, fill = JOB_TITLE)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  labs(title = "Top Jobs Applied for in Each State",
+       x = "State",
+       y = "Number of Applications") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1),
+        legend.position = "top",      # Adjust legend position
+        legend.title = element_blank())  # Remove legend title for better clarity
+
+print(bar_plot)
+```
+
+This next bar chart depicts the relationship between the top jobs and their case status as analyzed numerically earlier. It reveals that the top jobs were not only more certified because of their high count, but also because a majority of applications in general are certified. 
+```{r}
+selected_jobs <- c("PROGRAMMER ANALYST", "SOFTWARE ENGINEER", "SOFTWARE DEVELOPER", 
+                          "SYSTEMS ANALYST", "COMPUTER PROGRAMMER", "CONSULTANT", "BUSINESS ANALYST")
+filtered_data <- df2[df2$JOB_TITLE %in% selected_jobs,]
+
+ggplot(filtered_data, aes(x = JOB_TITLE, fill = CASE_STATUS)) +
+  geom_bar(position = "dodge", stat = "count") +
+  labs(title = "Distribution of Case Status by Job Title",
+       x = "Job Title",
+       y = "Count") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))  
+```
+
+The next visualization is a violin plot that examines occupation and days elapsed over the application decision period. The times seemed relatively consistent throughout the different jobs, confirming the conjecture made before. There is also a distinct widening in all of the individual plots at approximately six days. This implies that rather than the specific job affecting the certification time, there is simply a set period that almost all applications are reviewed in: six days. 
+```{r}
+selected_jobs <- c("PROGRAMMER ANALYST", "SOFTWARE ENGINEER", "SOFTWARE DEVELOPER", 
+                          "SYSTEMS ANALYST", "COMPUTER PROGRAMMER", "BUSINESS ANALYST")
+filtered_data <- df2[df2$JOB_TITLE %in% selected_jobs,]
+
+options(repr.plot.width=10, repr.plot.height=6)
+violin_plot <- ggplot(filtered_data, aes(x = JOB_TITLE, y = daysElapsed, fill = JOB_TITLE)) +
+  geom_violin(trim = FALSE) +
+  labs(title = "Days Elapsed by Job Title",
+       x = "Job Title",
+       y = "Days Elapsed") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1),
+        legend.position = "none") +  # Removing legend for better clarity
+  scale_y_continuous(limits = c(0, 10))  # Setting y-axis limits
+
+violin_plot
+```
+
+To summarize, these visual descriptions allowed for more value to be gained from the variable correlations I predicted to be significant. Although many of the relationships concerning case status and decision turnaround time seem to be negligible, I was able to discover the likely instigator of this issue. The final plot reveals that cases are frequently certified in six days regardless of the case details, deeming other variables inconsequential. This is a very meaningful factor that may make the dataset less ideal to analyze. 
+
+
+# Linear Regression
+
+This section employs linear regression analysis to determine associations between 'case_submitted' and 'daysElapsed' in the dataset. The aim is to discover a statistically significant relationship, indicating an influence of case submission volume on time elapsed. The block below creates the model.
+
+```{r}
+model <- lm(daysElapsed ~ CASE_SUBMITTED, data = df2) 
+summary(model)
+```
+The model suggests that there is a significant relationship between 'case_submitted' and 'daysElapsed'. The high r-squared value implies that the model explains a significant portion of the variability in 'daysElapsed'. Notably, the negative coefficient for case_submitted indicates that, on average, as the value of cases submitted increases, the days elapsed decreases. In the context of the H1B visa, this relationship could be influenced by the lottery system sometimes implemented. When there are more registrations than visas available, the lottery system is carried out, and they are able to review more applications but at random. This may account for a large amount of cases being certified in a shorter time frame (likely being six days as discovered in the previous section).
+
+
+# Linear Regression Diagnostics
+In this section, I will be conducting diagnostics for the linear regression model to truly evaluate its performance. The Residuals vs. Fitted Values plot assesses linearity, aiming for a random scatter around zero. The Normal Q-Q Plot evaluates normality, expecting points along a straight line. The Scale-Location Plot checks for homoscedasticity, with point that should form a horizontal band for constant variance. Lastly, the Residuals vs. Leverage plot identifies influential points and outliers.
+
+```{r}
+model <- lm(daysElapsed ~ CASE_SUBMITTED, data = df2)
+plot(model) 
+```
+It is evident from these plots that the data is not optimal. Firstly, the red line in the Residuals vs Fitted plot is not near the dashed zero line, indicating that the residuals don't have a mean of about zero. There also seems to be a pattern in the plot, showing that the variance isn't constant. Next, the Q-Q plot points deviate from the dashed line, meaning the residuals aren't normally distributed. In the Scale-Location plot, the red line is not fully horizontal, and the points again show somewhat of a pattern, showing non-homoscedasticity. Finally, the Residuals vs. Leverage plot is relatively good due to the lack of many outliers; however, this may be due to the reduced dataframe being used (df2). Overall, these plots don't decisively follow the expected trends, meaning it is not safe to make any of the desired assumptions.
+
+
+# Logistic Regression
+This final section uses logistic regression to predict visa certification outcomes. The response variable, 'decision', is derived from 'case_status', and non-certified statuses are consolidated into 'other'. The ideal results would reveal significant coefficients, highlighting factors influencing certification and providing insights into the determinants of success in the data.
+
+```{r}
+df2 <- df2 |>
+  mutate(decision = ifelse(CASE_STATUS == "CERTIFIED", 1, 0))
+
+logistic_model <- glm(decision ~ CASE_SUBMITTED, data = df2, family = "binomial")
+
+summary(logistic_model)
+```
+These results do provide evidence of a significant relationship between 'case_submitted' and the probability of visa certification. Firstly, the low p-values indicate statistical significance. Next, the positive estimate for 'case_submitted' suggests that an increase in the number of cases submitted is associated with better odds of H1B visa certification. Moreover, the significant reduction in deviance from the null model to the model with 'case_submitted' highlights its contribution in explaining variability in the certification result. Finally, it is important to note that almost all cases in this dataset were certified, so this relationship likely came from the fact that if the case was submitted, it was certified. 
+
+
+# Conclusion
+
+In conclusion, this comprehensive analysis of the H1B visa dataset provided valuable insights into the factors influencing the certification time frame and outcomes. I began with the data preparation phase, which involved omitting obsolete information and creating a new dataframe with my desired columns. Next, the numerical summary offered a quantitative overview, emphasizing key distributions within the dataset. The visual summary, comprising of bar charts and a violin plot, also depicted the distributional characteristics of important variables and revealed reasoning for some lack of variable correlation. The linear regression analyses then uncovered relationships between 'case_submitted' and 'daysElapsed,' highlighting the dynamics of H1B visa processing. The subsequent linear regression diagnostics then assessed the model assumptions, deeming the findings to lack reliability. Lastly, the logistic regression delved into predicting certification outcomes, with 'case_submitted' evidently emerging as a significant predictor. Overall, the context of this dataset made much of its information irrelevant; however, it underscores the importance of data preparation and model evaluation in deriving value from complex data. 
+
+
+
+
+
+ 
+
+
+
